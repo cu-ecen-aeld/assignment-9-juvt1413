@@ -17,16 +17,22 @@ jobs:
               # Initialize and sync submodules (matching build.sh pattern)
               git submodule init
               git submodule sync
-              # Debug: Show what commit is expected for buildroot
+              # Get the expected commit for buildroot
               BUILDROOT_COMMIT=$(git ls-tree HEAD buildroot | awk '{print $3}')
               echo "Expected buildroot commit: $BUILDROOT_COMMIT"
-              # If buildroot directory exists but is in bad state, clean it
-              if [ -d buildroot/.git ]; then
-                echo "Buildroot submodule directory exists, checking state..."
-                cd buildroot && git fetch origin && cd ..
-              fi
-              # Update submodules - this will fetch the commits if needed
-              git submodule update --recursive
+              # Update submodules - use --init to clone if needed
+              # The key is to fetch the commit explicitly if update fails
+              git submodule update --init --recursive || {
+                echo "Submodule update failed, fetching missing commits..."
+                # If update failed, try to fetch the buildroot commit explicitly
+                if [ -d .git/modules/buildroot ]; then
+                  (cd .git/modules/buildroot && git fetch origin $BUILDROOT_COMMIT 2>/dev/null || git fetch origin)
+                elif [ -d buildroot ]; then
+                  (cd buildroot && git fetch origin $BUILDROOT_COMMIT 2>/dev/null || git fetch origin)
+                fi
+                # Try update again
+                git submodule update --recursive
+              }
           - uses: webfactory/ssh-agent@v0.5.3
             with:
                 ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
