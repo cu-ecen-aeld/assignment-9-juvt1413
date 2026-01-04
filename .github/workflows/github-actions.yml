@@ -13,7 +13,41 @@ jobs:
         steps:
           - uses: actions/checkout@v2
           - name: Checkout submodules
-            run: git submodule update --init --recursive
+            run: |
+              # Diagnostic: Check network connectivity from container
+              echo "=== Network Diagnostics ==="
+              echo "Testing connectivity to git.busybox.net..."
+              curl -I https://git.busybox.net/buildroot/ 2>&1 | head -5 || echo "curl test failed"
+              echo "Testing DNS resolution..."
+              nslookup git.busybox.net || echo "nslookup failed"
+              echo "=== End Diagnostics ==="
+              
+              # Configure git for better network handling
+              git config --global http.postBuffer 524288000
+              git config --global http.lowSpeedLimit 1000
+              git config --global http.lowSpeedTime 300
+              
+              # Try the simple approach that works in assignment-8
+              # Initialize and sync submodules (matching build.sh pattern)
+              git submodule init
+              git submodule sync
+              
+              # Try updating submodules with retries (exactly like assignment-8)
+              MAX_RETRIES=5
+              for i in $(seq 1 $MAX_RETRIES); do
+                echo "Submodule update attempt $i of $MAX_RETRIES..."
+                if git submodule update --init --recursive; then
+                  echo "Submodule update succeeded!"
+                  exit 0
+                fi
+                if [ $i -lt $MAX_RETRIES ]; then
+                  echo "Submodule update failed, waiting before retry..."
+                  sleep $((i * 15))
+                else
+                  echo "Submodule update failed after $MAX_RETRIES attempts"
+                  exit 1
+                fi
+              done
           - uses: webfactory/ssh-agent@v0.5.3
             with:
                 ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
@@ -25,4 +59,3 @@ jobs:
             if: always()
             run: |
               ssh-add -D
-
