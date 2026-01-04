@@ -14,34 +14,45 @@ jobs:
           - uses: actions/checkout@v2
           - name: Checkout submodules
             run: |
-              # Diagnostic: Check network connectivity from container
-              echo "=== Network Diagnostics ==="
-              echo "Testing connectivity to git.busybox.net..."
-              curl -I https://git.busybox.net/buildroot/ 2>&1 | head -5 || echo "curl test failed"
-              echo "Testing DNS resolution..."
-              nslookup git.busybox.net || echo "nslookup failed"
-              echo "=== End Diagnostics ==="
-              
               # Configure git for better network handling
               git config --global http.postBuffer 524288000
               git config --global http.lowSpeedLimit 1000
               git config --global http.lowSpeedTime 300
               
-              # Try the simple approach that works in assignment-8
               # Initialize and sync submodules (matching build.sh pattern)
               git submodule init
               git submodule sync
               
-              # Try updating submodules with retries (exactly like assignment-8)
+              # Get the expected commit for buildroot
+              BUILDROOT_COMMIT=$(git ls-tree HEAD buildroot | awk '{print $3}')
+              echo "Expected buildroot commit: $BUILDROOT_COMMIT"
+              
+              # Try updating submodules with retries
+              # The key: git submodule update --init should clone and fetch, but network issues may cause failures
               MAX_RETRIES=5
               for i in $(seq 1 $MAX_RETRIES); do
                 echo "Submodule update attempt $i of $MAX_RETRIES..."
+                
+                # Try the standard update command
                 if git submodule update --init --recursive; then
                   echo "Submodule update succeeded!"
                   exit 0
                 fi
+                
+                # If it failed, try to fetch the buildroot commit explicitly
+                echo "Update failed, attempting to fetch buildroot commit..."
+                if [ -d .git/modules/buildroot ]; then
+                  (cd .git/modules/buildroot && git fetch origin $BUILDROOT_COMMIT 2>/dev/null || git fetch origin || true)
+                elif [ -d buildroot ] && ([ -d buildroot/.git ] || [ -f buildroot/.git ]); then
+                  (cd buildroot && git fetch origin $BUILDROOT_COMMIT 2>/dev/null || git fetch origin || true)
+                else
+                  # Repository doesn't exist yet, try to initialize it
+                  echo "Buildroot repository not found, initializing..."
+                  git submodule update --init buildroot 2>/dev/null || true
+                fi
+                
                 if [ $i -lt $MAX_RETRIES ]; then
-                  echo "Submodule update failed, waiting before retry..."
+                  echo "Waiting before retry..."
                   sleep $((i * 15))
                 else
                   echo "Submodule update failed after $MAX_RETRIES attempts"
