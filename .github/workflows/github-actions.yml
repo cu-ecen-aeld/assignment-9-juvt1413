@@ -13,48 +13,7 @@ jobs:
         steps:
           - uses: actions/checkout@v2
           - name: Checkout submodules
-            run: |
-              # Configure git for better network handling
-              git config --global http.postBuffer 524288000
-              git config --global http.lowSpeedLimit 1000
-              git config --global http.lowSpeedTime 300
-              # Initialize and sync submodules (matching build.sh pattern)
-              git submodule init
-              git submodule sync
-              # Get the expected commit for buildroot
-              BUILDROOT_COMMIT=$(git ls-tree HEAD buildroot | awk '{print $3}')
-              echo "Expected buildroot commit: $BUILDROOT_COMMIT"
-              # First, ensure buildroot submodule repository is cloned (without checking out)
-              echo "Ensuring buildroot submodule repository is cloned..."
-              git submodule update --init --no-fetch buildroot 2>/dev/null || {
-                # If that fails, the repository might not exist yet, so clone it manually
-                if [ ! -d .git/modules/buildroot ] && [ ! -d buildroot/.git ] && [ ! -f buildroot/.git ]; then
-                  echo "Manually initializing buildroot submodule repository..."
-                  mkdir -p .git/modules
-                  git clone --bare https://git.busybox.net/buildroot/ .git/modules/buildroot
-                fi
-              }
-              # Fetch the specific commit we need
-              if [ -d .git/modules/buildroot ]; then
-                echo "Fetching buildroot commit $BUILDROOT_COMMIT..."
-                (cd .git/modules/buildroot && git fetch origin $BUILDROOT_COMMIT 2>/dev/null || git fetch origin || true)
-              fi
-              # Now try updating submodules with retries
-              MAX_RETRIES=3
-              for i in $(seq 1 $MAX_RETRIES); do
-                echo "Submodule update attempt $i of $MAX_RETRIES..."
-                if git submodule update --recursive; then
-                  echo "Submodule update succeeded!"
-                  exit 0
-                fi
-                if [ $i -lt $MAX_RETRIES ]; then
-                  echo "Submodule update failed, waiting before retry..."
-                  sleep $((i * 10))
-                else
-                  echo "Submodule update failed after $MAX_RETRIES attempts"
-                  exit 1
-                fi
-              done
+            run: git submodule update --init --recursive
           - uses: webfactory/ssh-agent@v0.5.3
             with:
                 ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
@@ -66,3 +25,4 @@ jobs:
             if: always()
             run: |
               ssh-add -D
+
