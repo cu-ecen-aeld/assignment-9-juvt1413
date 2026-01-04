@@ -19,41 +19,17 @@ jobs:
               git config --global http.lowSpeedLimit 1000
               git config --global http.lowSpeedTime 300
               
-              # Initialize and sync submodules (matching build.sh pattern)
-              git submodule init
-              git submodule sync
-              
-              # Get the expected commit for buildroot
-              BUILDROOT_COMMIT=$(git ls-tree HEAD buildroot | awk '{print $3}')
-              echo "Expected buildroot commit: $BUILDROOT_COMMIT"
-              
-              # Try updating submodules with retries
-              # The key: git submodule update --init should clone and fetch, but network issues may cause failures
-              MAX_RETRIES=5
+              # Try updating submodules with 2 retries (matching assignment-8 approach)
+              MAX_RETRIES=2
               for i in $(seq 1 $MAX_RETRIES); do
                 echo "Submodule update attempt $i of $MAX_RETRIES..."
-                
-                # Try the standard update command
                 if git submodule update --init --recursive; then
                   echo "Submodule update succeeded!"
                   exit 0
                 fi
-                
-                # If it failed, try to fetch the buildroot commit explicitly
-                echo "Update failed, attempting to fetch buildroot commit..."
-                if [ -d .git/modules/buildroot ]; then
-                  (cd .git/modules/buildroot && git fetch origin $BUILDROOT_COMMIT 2>/dev/null || git fetch origin || true)
-                elif [ -d buildroot ] && ([ -d buildroot/.git ] || [ -f buildroot/.git ]); then
-                  (cd buildroot && git fetch origin $BUILDROOT_COMMIT 2>/dev/null || git fetch origin || true)
-                else
-                  # Repository doesn't exist yet, try to initialize it
-                  echo "Buildroot repository not found, initializing..."
-                  git submodule update --init buildroot 2>/dev/null || true
-                fi
-                
                 if [ $i -lt $MAX_RETRIES ]; then
-                  echo "Waiting before retry..."
-                  sleep $((i * 15))
+                  echo "Submodule update failed, waiting before retry..."
+                  sleep 10
                 else
                   echo "Submodule update failed after $MAX_RETRIES attempts"
                   exit 1
